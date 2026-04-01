@@ -1,0 +1,8 @@
+{
+    "main":  "index.js",
+    "name":  "uno-draw-card",
+    "version":  "1.0.0",
+    "dependencies":  {
+
+                     }
+}

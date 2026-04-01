@@ -1,0 +1,9 @@
+{
+    "main": "index.js",
+    "name": "uno-create-game",
+    "version": "1.0.0",
+    "dependencies": {
+        "uno-multiplayer": "file:../..",
+        "uuid": "^9.0.0"
+    }
+}

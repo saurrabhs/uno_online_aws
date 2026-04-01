@@ -1,0 +1,8 @@
+{
+    "main":  "index.js",
+    "name":  "uno-websocket-handler",
+    "version":  "1.0.0",
+    "dependencies":  {
+
+                     }
+}

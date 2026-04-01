@@ -1,0 +1,387 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: UNO Multiplayer Card Game - Serverless Backend
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, prod]
+  MaxPlayers:
+    Type: Number
+    Default: 6
+  InitialCards:
+    Type: Number
+    Default: 7
+
+Globals:
+  Function:
+    Runtime: nodejs18.x
+    Timeout: 15
+    MemorySize: 256
+    Environment:
+      Variables:
+        GAMES_TABLE: !Ref GamesTable
+        CONNECTIONS_TABLE: !Ref ConnectionsTable
+        MAX_PLAYERS: !Ref MaxPlayers
+        INITIAL_CARDS: !Ref InitialCards
+        WEBSOCKET_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+
+# ─── DynamoDB Tables ──────────────────────────────────────────────────────────
+Resources:
+  GamesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'uno-games-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: gameId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: gameId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: UnoGame
+
+  ConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'uno-connections-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: connectionId
+          AttributeType: S
+        - AttributeName: gameId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: connectionId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: gameId-index
+          KeySchema:
+            - AttributeName: gameId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: UnoGame
+
+# ─── IAM Role ─────────────────────────────────────────────────────────────────
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'uno-lambda-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: UnoGamePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !GetAtt GamesTable.Arn
+                  - !GetAtt ConnectionsTable.Arn
+                  - !Sub '${ConnectionsTable.Arn}/index/*'
+              - Effect: Allow
+                Action:
+                  - execute-api:ManageConnections
+                Resource:
+                  - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+
+# ─── REST API ─────────────────────────────────────────────────────────────────
+  RestApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub 'uno-rest-api-${Environment}'
+      StageName: !Ref Environment
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization'"
+        AllowOrigin: "'*'"
+
+# ─── Lambda Functions ─────────────────────────────────────────────────────────
+  CreateGameFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'uno-create-game-${Environment}'
+      CodeUri: ../backend/create-game/
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        CreateGame:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RestApi
+            Path: /games
+            Method: POST
+
+  JoinGameFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'uno-join-game-${Environment}'
+      CodeUri: ../backend/join-game/
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        JoinGame:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RestApi
+            Path: /games/{id}/join
+            Method: POST
+
+  MakeMoveFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'uno-make-move-${Environment}'
+      CodeUri: ../backend/make-move/
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        MakeMove:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RestApi
+            Path: /games/{id}/move
+            Method: POST
+
+  DrawCardFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'uno-draw-card-${Environment}'
+      CodeUri: ../backend/draw-card/
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        DrawCard:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RestApi
+            Path: /games/{id}/draw
+            Method: POST
+
+  StartGameFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'uno-start-game-${Environment}'
+      CodeUri: ../backend/start-game/
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        StartGame:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RestApi
+            Path: /games/{id}/start
+            Method: POST
+
+  RestartGameFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'uno-restart-game-${Environment}'
+      CodeUri: ../backend/restart-game/
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        RestartGame:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RestApi
+            Path: /games/{id}/restart
+            Method: POST
+
+  GetGameStateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'uno-get-game-state-${Environment}'
+      CodeUri: ../backend/get-game-state/
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetGame:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RestApi
+            Path: /games/{id}
+            Method: GET
+        ListGames:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RestApi
+            Path: /games
+            Method: GET
+
+# ─── WebSocket API ────────────────────────────────────────────────────────────
+  WebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub 'uno-websocket-${Environment}'
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: '$request.body.action'
+
+  WebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref WebSocketApi
+      StageName: !Ref Environment
+      AutoDeploy: true
+
+  WebSocketHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'uno-websocket-handler-${Environment}'
+      CodeUri: ../backend/websocket-handler/
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+
+  WebSocketHandlerPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WebSocketHandlerFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+
+  ConnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketHandlerFunction.Arn}/invocations'
+
+  ConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $connect
+      AuthorizationType: NONE
+      Target: !Sub 'integrations/${ConnectIntegration}'
+
+  DisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $disconnect
+      AuthorizationType: NONE
+      Target: !Sub 'integrations/${ConnectIntegration}'
+
+  DefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $default
+      AuthorizationType: NONE
+      Target: !Sub 'integrations/${ConnectIntegration}'
+
+# ─── S3 + CloudFront ──────────────────────────────────────────────────────────
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'uno-game-frontend-${AWS::AccountId}-${Environment}'
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET]
+            AllowedOrigins: ['*']
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${FrontendBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
+
+  CloudFrontOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub 'uno-oac-${Environment}'
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !Ref CloudFrontOAC
+            S3OriginConfig: {}
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # CachingOptimized
+          AllowedMethods: [GET, HEAD]
+        CustomErrorResponses:
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+        PriceClass: PriceClass_100
+        HttpVersion: http2
+
+# ─── Outputs ──────────────────────────────────────────────────────────────────
+Outputs:
+  RestApiUrl:
+    Description: REST API endpoint URL
+    Value: !Sub 'https://${RestApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub 'UnoRestApiUrl-${Environment}'
+
+  WebSocketUrl:
+    Description: WebSocket endpoint URL
+    Value: !Sub 'wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub 'UnoWebSocketUrl-${Environment}'
+
+  CloudFrontUrl:
+    Description: CloudFront distribution URL
+    Value: !Sub 'https://${CloudFrontDistribution.DomainName}'
+    Export:
+      Name: !Sub 'UnoFrontendUrl-${Environment}'
+
+  FrontendBucketName:
+    Description: S3 bucket for frontend
+    Value: !Ref FrontendBucket
+    Export:
+      Name: !Sub 'UnoFrontendBucket-${Environment}'

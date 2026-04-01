@@ -1,0 +1,8 @@
+{
+    "main":  "index.js",
+    "name":  "uno-start-game",
+    "version":  "1.0.0",
+    "dependencies":  {
+
+                     }
+}

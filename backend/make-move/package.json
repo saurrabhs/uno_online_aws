@@ -1,0 +1,8 @@
+{
+    "main":  "index.js",
+    "name":  "uno-make-move",
+    "version":  "1.0.0",
+    "dependencies":  {
+
+                     }
+}

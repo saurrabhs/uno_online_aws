@@ -1,0 +1,8 @@
+{
+    "main":  "index.js",
+    "name":  "uno-get-game-state",
+    "version":  "1.0.0",
+    "dependencies":  {
+
+                     }
+}

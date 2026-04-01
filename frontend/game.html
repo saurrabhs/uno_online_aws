@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UNO - Game Room</title>
+  <link rel="stylesheet" href="css/game.css">
+</head>
+<body>
+
+<!-- ─── Color Picker Modal ─────────────────────────────────────────────── -->
+<div id="colorPickerModal" class="modal-overlay hidden">
+  <div class="modal-box color-picker-box">
+    <h2 class="modal-title">Choose a Color</h2>
+    <div class="color-grid">
+      <button class="color-btn color-red"    onclick="chooseColor('red')">
+        <span>Red</span>
+      </button>
+      <button class="color-btn color-blue"   onclick="chooseColor('blue')">
+        <span>Blue</span>
+      </button>
+      <button class="color-btn color-green"  onclick="chooseColor('green')">
+        <span>Green</span>
+      </button>
+      <button class="color-btn color-yellow" onclick="chooseColor('yellow')">
+        <span>Yellow</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Winner Modal ───────────────────────────────────────────────────── -->
+<div id="winnerModal" class="modal-overlay hidden">
+  <div class="modal-box winner-box">
+    <div class="winner-emoji" id="winnerEmoji">🏆</div>
+    <h2 class="winner-title" id="winnerTitle">Player Wins!</h2>
+    <div class="winner-scores" id="winnerScores"></div>
+    <div class="scoreboard-section">
+      <div class="scoreboard-title">Scoreboard (this room)</div>
+      <div id="cumulativeScores" class="cumulative-scores"></div>
+    </div>
+    <div class="winner-actions"></div>
+  </div>
+</div>
+
+<!-- ─── Challenge Modal ────────────────────────────────────────────────── -->
+<div id="challengeModal" class="modal-overlay hidden">
+  <div class="modal-box challenge-box">
+    <h2 class="modal-title">Wild Draw Four Played!</h2>
+    <p class="modal-desc" id="challengeDesc"></p>
+    <div class="challenge-actions">
+      <button class="btn btn-danger" onclick="challengeDrawFour()">⚔️ Challenge!</button>
+      <button class="btn btn-secondary" onclick="acceptDrawFour()">Accept (+4 cards)</button>
+    </div>
+    <div class="challenge-timer-bar"><div id="challengeTimerFill"></div></div>
+  </div>
+</div>
+
+<!-- ─── Main Game Layout ───────────────────────────────────────────────── -->
+<div class="game-wrapper">
+
+  <!-- Top HUD -->
+  <div class="top-hud">
+    <div class="hud-left">
+      <span class="game-id-badge" id="gameIdBadge">GAME: ---</span>
+      <span class="direction-badge" id="directionBadge">▶ Clockwise</span>
+    </div>
+    <div class="hud-center">
+      <div class="current-color-indicator" id="currentColorIndicator">
+        <span id="currentColorText">-</span>
+      </div>
+    </div>
+    <div class="hud-right">
+      <div class="turn-timer" id="turnTimer">
+        <svg viewBox="0 0 36 36" class="timer-svg">
+          <circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="3"/>
+          <circle cx="18" cy="18" r="15.9" fill="none" stroke="#3498db" stroke-width="3"
+                  stroke-dasharray="100 100" stroke-dashoffset="0" id="timerCircle"
+                  stroke-linecap="round" transform="rotate(-90 18 18)"/>
+        </svg>
+        <span id="timerText">30</span>
+      </div>
+      <button class="btn-icon-only" onclick="toggleChat()" title="Chat">💬</button>
+      <button class="btn-icon-only" onclick="goLobby()" title="Leave">🚪</button>
+    </div>
+  </div>
+
+  <!-- Up to 6-Player Arena -->
+  <div class="game-arena">
+
+    <!-- Top-Left Player (slot 2) -->
+    <div class="player-zone player-topleft" id="player-topleft">
+      <div class="player-info">
+        <div class="player-avatar" id="avatar-topleft">?</div>
+        <div class="player-details">
+          <span class="player-name" id="name-topleft">Waiting...</span>
+          <span class="player-card-count" id="count-topleft">0 cards</span>
+        </div>
+      </div>
+      <div class="opponent-cards" id="cards-topleft"></div>
+    </div>
+
+    <!-- Top Player (slot 3) -->
+    <div class="player-zone player-top" id="player-top">
+      <div class="player-info">
+        <div class="player-avatar" id="avatar-top">?</div>
+        <div class="player-details">
+          <span class="player-name" id="name-top">Waiting...</span>
+          <span class="player-card-count" id="count-top">0 cards</span>
+        </div>
+      </div>
+      <div class="opponent-cards" id="cards-top"></div>
+    </div>
+
+    <!-- Top-Right Player (slot 4) -->
+    <div class="player-zone player-topright" id="player-topright">
+      <div class="player-info">
+        <div class="player-avatar" id="avatar-topright">?</div>
+        <div class="player-details">
+          <span class="player-name" id="name-topright">Waiting...</span>
+          <span class="player-card-count" id="count-topright">0 cards</span>
+        </div>
+      </div>
+      <div class="opponent-cards" id="cards-topright"></div>
+    </div>
+
+    <!-- Left Player (slot 6) -->
+    <div class="player-zone player-left" id="player-left">
+      <div class="player-info vertical">
+        <div class="player-avatar" id="avatar-left">?</div>
+        <span class="player-name" id="name-left">Waiting...</span>
+        <span class="player-card-count" id="count-left">0</span>
+      </div>
+      <div class="opponent-cards vertical" id="cards-left"></div>
+    </div>
+
+    <!-- Center Table -->
+    <div class="center-table">
+      <!-- Draw Pile -->
+      <div class="pile-area">
+        <div class="pile-label">DRAW</div>
+        <div class="draw-pile" id="drawPile" onclick="drawCard()" title="Draw a card">
+          <div class="card card-back pile-card">
+            <div class="card-back-inner">
+              <div class="card-back-oval">
+                <span class="card-back-text">UNO</span>
+              </div>
+            </div>
+          </div>
+          <span class="pile-count" id="drawPileCount">0</span>
+        </div>
+      </div>
+
+      <!-- Discard Pile -->
+      <div class="pile-area">
+        <div class="pile-label">DISCARD</div>
+        <div class="discard-pile" id="discardPile">
+          <div id="topCardDisplay" class="top-card-container"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Player (Opponent 4) -->
+    <div class="player-zone player-right" id="player-right">
+      <div class="opponent-cards vertical" id="cards-right"></div>
+      <div class="player-info vertical">
+        <div class="player-avatar" id="avatar-right">?</div>
+        <span class="player-name" id="name-right">Waiting...</span>
+        <span class="player-card-count" id="count-right">0</span>
+      </div>
+    </div>
+
+    <!-- Bottom Player (You) -->
+    <div class="player-zone player-bottom" id="player-bottom">
+      <div class="player-info">
+        <div class="player-avatar you-avatar" id="avatar-bottom">YOU</div>
+        <div class="player-details">
+          <span class="player-name" id="name-bottom">You</span>
+          <span class="player-card-count" id="count-bottom">7 cards</span>
+        </div>
+        <div class="action-buttons">
+          <button class="btn-uno" id="unoBtn" onclick="callUno()">UNO!</button>
+          <button class="btn-catch" id="catchBtn" onclick="catchUno()" style="display:none">Catch!</button>
+          <button class="btn-pass" id="passBtn" onclick="passAfterDraw()" style="display:none">Pass</button>
+        </div>
+      </div>
+      <!-- Your hand -->
+      <div class="my-hand" id="myHand"></div>
+    </div>
+
+  </div><!-- /game-arena -->
+
+  <!-- Status Bar -->
+  <div class="status-bar" id="statusBar">
+    <span id="statusText">Waiting for players...</span>
+  </div>
+
+  <!-- Chat Panel -->
+  <div class="chat-panel hidden" id="chatPanel">
+    <div class="chat-header">
+      <span>Chat</span>
+      <button onclick="toggleChat()">✕</button>
+    </div>
+    <div class="chat-messages" id="chatMessages"></div>
+    <div class="chat-input-row">
+      <input type="text" id="chatInput" placeholder="Type a message..." maxlength="200">
+      <button onclick="sendChat()">Send</button>
+    </div>
+  </div>
+
+</div><!-- /game-wrapper -->
+
+<!-- Drawn card overlay (when you draw and can play) -->
+<div id="drawnCardOverlay" class="drawn-card-overlay hidden">
+  <div class="drawn-card-box">
+    <p>You drew:</p>
+    <div id="drawnCardDisplay"></div>
+    <div class="drawn-card-actions">
+      <button class="btn btn-primary" id="playDrawnBtn" onclick="playDrawnCard()">Play It</button>
+      <button class="btn btn-secondary" onclick="keepDrawnCard()">Keep</button>
+    </div>
+  </div>
+</div>
+
+<script src="../config/api-config.js"></script>
+<script src="js/card-renderer.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>

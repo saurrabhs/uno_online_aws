@@ -1,0 +1,13 @@
+{
+  "name": "uno-multiplayer",
+  "version": "1.0.0",
+  "description": "4-player real-time UNO multiplayer game on AWS",
+  "scripts": {
+    "test": "cd tests && npm install && npm test",
+    "deploy": "bash scripts/deploy.sh",
+    "destroy": "bash scripts/destroy.sh",
+    "install:backend": "for dir in backend/create-game backend/join-game backend/make-move backend/draw-card backend/get-game-state backend/websocket-handler; do (cd $dir && npm install); done"
+  },
+  "keywords": ["uno", "multiplayer", "aws", "serverless", "websocket"],
+  "license": "MIT"
+}

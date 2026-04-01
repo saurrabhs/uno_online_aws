@@ -1,0 +1,43 @@
+{
+  "maxPlayers": 6,
+  "minPlayers": 2,
+  "initialCards": 7,
+  "turnTimeoutSeconds": 30,
+  "challengeRuleEnabled": true,
+  "stackingEnabled": false,
+  "jumpInEnabled": false,
+  "pointsToWin": 500,
+  "cardValues": {
+    "number": "faceValue",
+    "skip": 20,
+    "reverse": 20,
+    "drawTwo": 20,
+    "wild": 50,
+    "wildDrawFour": 50
+  },
+  "deckComposition": {
+    "numberCards": {
+      "zero": 1,
+      "oneToNine": 2,
+      "perColor": true
+    },
+    "actionCards": {
+      "skip": 2,
+      "reverse": 2,
+      "drawTwo": 2,
+      "perColor": true
+    },
+    "wildCards": {
+      "wild": 4,
+      "wildDrawFour": 4
+    },
+    "totalCards": 108
+  },
+  "unoCallWindow": 2000,
+  "penaltyCards": 2,
+  "autoPassOnDraw": true,
+  "firstCardRules": {
+    "wildDrawFourNotAllowed": true,
+    "actionCardAllowed": true
+  }
+}
