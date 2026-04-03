@@ -133,7 +133,7 @@ body {
     "left     center  right"
     ".        bottom  .";
   grid-template-columns: 160px 1fr 160px;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto 1fr minmax(0, auto);
   background: var(--table-felt);
   position: relative;
   overflow: hidden;
@@ -171,7 +171,7 @@ body {
 .player-topright{ grid-area: topright; flex-direction: column; }
 .player-left    { grid-area: left;     flex-direction: row; align-items: center; }
 .player-right   { grid-area: right;    flex-direction: row; align-items: center; }
-.player-bottom  { grid-area: bottom;   flex-direction: column; padding-bottom: 12px; }
+.player-bottom  { grid-area: bottom; flex-direction: column; padding-bottom: 8px; max-height: 180px; overflow: hidden; }
 
 /* ─── Player Info ──────────────────────────────────────────────────────────── */
 .player-info {
@@ -434,9 +434,11 @@ body {
   justify-content: center;
   flex-wrap: nowrap;
   overflow-x: auto;
-  padding: 10px 20px 0;
+  overflow-y: hidden;
+  padding: 8px 16px 0;
   gap: 0;
-  min-height: 130px;
+  min-height: 110px;
+  max-height: 130px;
   max-width: 100%;
   scrollbar-width: thin;
   scrollbar-color: rgba(255,255,255,0.2) transparent;
@@ -1151,25 +1153,38 @@ body {
 /* ─── UNO Notification ─────────────────────────────────────────────────────── */
 .uno-notif {
   position: fixed;
-  top: 80px;
+  top: 70px;
   left: 50%;
   transform: translateX(-50%) translateY(-20px);
   background: linear-gradient(135deg, #e74c3c, #c0392b);
   color: white;
-  padding: 12px 32px;
-  border-radius: 30px;
-  font-size: 1.4rem;
+  padding: 10px 24px;
+  border-radius: 24px;
+  font-size: 1.1rem;
   font-weight: 900;
   z-index: 9999;
   opacity: 0;
   transition: all 0.3s ease;
   box-shadow: 0 4px 20px rgba(231,76,60,0.6);
   pointer-events: none;
+  white-space: nowrap;
+  max-width: 90vw;
+  text-align: center;
 }
 
 .uno-notif.show {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+}
+
+/* Smaller on mobile */
+@media (max-width: 600px), (max-height: 500px) {
+  .uno-notif {
+    font-size: 0.85rem;
+    padding: 7px 16px;
+    border-radius: 16px;
+    top: 50px;
+  }
 }
 
 /* ─── Toast ────────────────────────────────────────────────────────────────── */
@@ -1189,9 +1204,15 @@ body {
   transition: all 0.3s ease;
   backdrop-filter: blur(10px);
   pointer-events: none;
+  max-width: 85vw;
+  text-align: center;
 }
 
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+@media (max-width: 600px), (max-height: 500px) {
+  .toast { font-size: 0.75rem; padding: 7px 14px; bottom: 30px; }
+}
 
 /* ─── Scoreboard in Winner Modal ───────────────────────────────────────────── */
 .scoreboard-section {
@@ -1238,3 +1259,184 @@ body {
 .cum-rank { color: var(--text-dim); font-size: 0.8rem; min-width: 24px; }
 .cum-name { flex: 1; font-weight: 600; }
 .cum-score { color: var(--yellow); font-weight: 700; }
+
+/* ─── Rotate Prompt ────────────────────────────────────────────────────────── */
+.rotate-prompt {
+  position: fixed;
+  inset: 0;
+  background: rgba(6,6,18,0.97);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  backdrop-filter: blur(8px);
+}
+
+.rotate-box {
+  text-align: center;
+  padding: 40px 32px;
+}
+
+.rotate-icon {
+  margin-bottom: 20px;
+  animation: rotateHint 2s ease-in-out infinite;
+}
+
+@keyframes rotateHint {
+  0%,100% { transform: rotate(0deg); }
+  40%      { transform: rotate(90deg); }
+  60%      { transform: rotate(90deg); }
+}
+
+.rotate-title {
+  font-size: 1.4rem;
+  font-weight: 800;
+  margin-bottom: 8px;
+  color: white;
+}
+
+.rotate-sub {
+  font-size: 0.9rem;
+  color: rgba(255,255,255,0.55);
+}
+
+/* ─── Mobile Landscape — Full Game Layout ──────────────────────────────────── */
+
+/* Portrait on mobile — show rotate prompt, hide game */
+@media (max-width: 768px) and (orientation: portrait) {
+  .rotate-prompt { display: flex !important; }
+  .game-wrapper  { display: none !important; }
+}
+
+/* Landscape on mobile — proper game layout */
+@media (max-width: 900px) and (orientation: landscape) {
+  .rotate-prompt { display: none !important; }
+
+  body { overflow: hidden; height: 100vh; }
+
+  .game-wrapper { height: 100vh; overflow: hidden; }
+
+  /* Compact HUD */
+  .top-hud { height: 36px; padding: 4px 10px; }
+  .game-id-badge { font-size: 0.6rem; padding: 2px 6px; }
+  .direction-badge { display: none; }
+  .current-color-indicator { padding: 3px 8px; font-size: 0.7rem; }
+  .turn-timer { width: 28px; height: 28px; }
+  .timer-svg  { width: 28px; height: 28px; }
+  #timerText  { font-size: 0.6rem; }
+  .btn-icon-only { padding: 4px 7px; font-size: 0.85rem; }
+
+  /* Landscape arena — 3 rows × 3 cols grid */
+  .game-arena {
+    display: grid !important;
+    grid-template-areas:
+      "topleft  top     topright"
+      "left     center  right"
+      ".        bottom  .";
+    grid-template-columns: 110px 1fr 110px;
+    grid-template-rows: auto 1fr auto;
+    height: calc(100vh - 36px - 28px);
+    overflow: hidden;
+  }
+
+  /* Smaller cards in landscape mobile */
+  .card { width: 38px; height: 57px; border-radius: 5px; }
+  .card.pile-card  { width: 46px; height: 69px; }
+  .card.large-card { width: 52px; height: 78px; }
+
+  /* My hand — compact */
+  .my-hand {
+    min-height: 70px;
+    padding: 4px 8px 0;
+    overflow-x: auto;
+  }
+
+  .my-hand .card { margin-left: -14px; }
+  .my-hand .card:first-child { margin-left: 0; }
+  .my-hand .card:hover { transform: translateY(-10px) scale(1.06); }
+
+  /* Player info compact — keep action buttons visible */
+  .player-info { padding: 3px 6px; gap: 4px; margin-bottom: 3px; }
+  .player-avatar { width: 22px; height: 22px; font-size: 0.45rem; }
+  .player-name { font-size: 0.65rem; max-width: 60px; }
+  .player-card-count { font-size: 0.55rem; }
+  .player-details { display: flex; flex-direction: column; gap: 0; } /* keep visible */
+  .player-card-count { display: none; } /* hide count to save space */
+
+  /* Opponent cards tiny */
+  .opponent-cards .card { width: 18px; height: 27px; border-radius: 2px; }
+  .opponent-cards.vertical .card { width: 20px; height: 30px; }
+
+  /* Center table compact */
+  .center-table { gap: 14px; padding: 8px; }
+  .pile-label { font-size: 0.55rem; }
+  .pile-count { font-size: 0.6rem; bottom: -16px; }
+
+  /* Action buttons — always visible, compact */
+  .action-buttons { gap: 3px; flex-wrap: wrap; }
+  .btn-uno   { padding: 4px 7px; font-size: 0.6rem; letter-spacing: 0; border-radius: 5px; animation: none; box-shadow: 0 2px 8px rgba(231,76,60,0.5); }
+  .btn-catch { padding: 4px 7px; font-size: 0.6rem; border-radius: 5px; }
+  .btn-pass  { padding: 4px 7px; font-size: 0.6rem; border-radius: 5px; }
+
+  /* Status bar compact */
+  .status-bar { font-size: 0.65rem; padding: 4px 8px; min-height: 24px; }
+
+  /* Side player zones — tighter */
+  .player-left, .player-right { padding: 4px; }
+  .player-top, .player-topleft, .player-topright { padding: 4px 6px; min-height: 50px; }
+  .player-bottom { padding: 4px 6px 6px; }
+
+  /* Chat panel — slide over from right, smaller */
+  .chat-panel { width: 220px; top: 36px; bottom: 24px; }
+
+  /* Modals — compact for landscape */
+  .modal-box { padding: 16px; border-radius: 12px; max-width: 90vw; max-height: 90vh; overflow-y: auto; }
+  .color-grid { gap: 8px; }
+  .color-btn { height: 50px; font-size: 0.85rem; }
+  .winner-box { min-width: unset; }
+  .winner-emoji { font-size: 2.5rem; margin-bottom: 6px; }
+  .winner-title { font-size: 1.2rem; }
+  .winner-actions { flex-direction: row; gap: 8px; }
+
+  /* Waiting overlay compact */
+  .waiting-box { padding: 16px 20px; }
+  .waiting-logo { font-size: 2rem; }
+  .waiting-players { gap: 8px; }
+  .waiting-avatar { width: 32px; height: 32px; font-size: 0.8rem; }
+}
+
+/* Very small landscape phones (height < 400px) */
+@media (max-height: 400px) and (orientation: landscape) {
+  .card { width: 32px; height: 48px; }
+  .card.pile-card { width: 38px; height: 57px; }
+  .my-hand { min-height: 58px; }
+  .player-info { display: none; } /* extreme compact — hide all player info bars */
+  .player-name-badge {
+    position: absolute;
+    top: 2px;
+    left: 4px;
+    font-size: 0.55rem;
+    color: rgba(255,255,255,0.6);
+    font-weight: 700;
+    pointer-events: none;
+  }
+}
+
+.rotate-fs-btn {
+  margin-top: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #2E7D32, #1B5E20);
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(46,125,50,0.5);
+  transition: all 0.2s;
+}
+
+.rotate-fs-btn:hover { box-shadow: 0 6px 24px rgba(46,125,50,0.7); transform: translateY(-1px); }

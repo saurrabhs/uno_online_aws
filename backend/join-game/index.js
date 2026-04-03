@@ -9,7 +9,7 @@ const CORS_HEADERS = {
   'Content-Type': 'application/json'
 };
 
-const MAX_PLAYERS = parseInt(process.env.MAX_PLAYERS || '4');
+const MAX_PLAYERS = parseInt(process.env.MAX_PLAYERS || '6');
 
 exports.handler = async (event) => {
   try {

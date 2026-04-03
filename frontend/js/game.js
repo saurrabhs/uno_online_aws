@@ -24,9 +24,51 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('name-bottom').textContent = State.playerName;
   document.getElementById('chatInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
 
+  // Handle orientation on mobile
+  handleOrientation();
+  window.addEventListener('orientationchange', () => setTimeout(handleOrientation, 300));
+  window.addEventListener('resize', handleOrientation);
+
   connectWebSocket();
   fetchGameState();
+
+  // Init sound on first interaction
+  document.addEventListener('click', () => SoundEngine.resume(), { once: true });
+  document.addEventListener('touchstart', () => SoundEngine.resume(), { once: true });
 });
+
+function requestFullscreenAndPlay() {
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+  if (req) {
+    req.call(el).then(() => {
+      // Try to lock to landscape after fullscreen
+      if (screen.orientation && screen.orientation.lock) {
+        screen.orientation.lock('landscape').catch(() => {});
+      }
+    }).catch(() => {});
+  }
+  document.getElementById('rotatePrompt').classList.add('hidden');
+}
+
+function handleOrientation() {
+  const prompt = document.getElementById('rotatePrompt');
+  if (!prompt) return;
+  const isMobile = window.innerWidth <= 900 || ('ontouchstart' in window);
+  const isPortrait = window.innerHeight > window.innerWidth;
+
+  if (isMobile && isPortrait) {
+    prompt.classList.remove('hidden');
+  } else {
+    prompt.classList.add('hidden');
+    // Auto-request fullscreen on mobile landscape for immersive play
+    if (isMobile && !document.fullscreenElement) {
+      const el = document.documentElement;
+      const req = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+      if (req) req.call(el).catch(() => {});
+    }
+  }
+}
 
 // ─── WebSocket ───────────────────────────────────────────────────────────────
 function connectWebSocket() {
@@ -67,19 +109,23 @@ function handleServerMessage(msg) {
       hideWaitingOverlay();
       document.getElementById('hostStartBtn')?.remove();
       addChat('system', 'Game started! Good luck!');
+      SoundEngine.playGameStart();
       break;
     case 'gameRestarted':
       if (msg.gameState) applyGameState(msg.gameState);
       document.getElementById('winnerModal').classList.add('hidden');
       addChat('system', 'New game started!');
+      SoundEngine.playGameStart();
       break;
     case 'playerJoined':
-      addChat('system', `${msg.playerName} joined (${msg.playerCount}/4)`);
+      addChat('system', `${msg.playerName} joined (${msg.playerCount}/6)`);
       if (msg.gameState) applyGameState(msg.gameState);
+      SoundEngine.playPlayerJoin();
       break;
     case 'playerConnected':
       addChat('system', `${msg.playerName} reconnected`);
       if (msg.gameState) applyGameState(msg.gameState);
+      SoundEngine.playPlayerJoin();
       break;
     case 'playerDisconnected':
       addChat('system', `${msg.playerName} disconnected`);
@@ -87,14 +133,16 @@ function handleServerMessage(msg) {
       break;
     case 'chat':
       addChat(msg.playerName, msg.message);
+      if (msg.playerId !== State.playerId) SoundEngine.playChat();
       break;
     case 'unoCall':
       showUnoNotif(msg.playerName);
-      // Hide catch button when UNO is called successfully
       document.getElementById('catchBtn').style.display = 'none';
+      SoundEngine.playUnoCall();
       break;
     case 'unoPenalty':
       addChat('system', `${msg.targetName || 'A player'} was caught not calling UNO! +2 cards penalty.`);
+      SoundEngine.playUnoPenalty();
       break;
     case 'catchFailed':
       showToast(msg.reason || 'Catch failed.');
@@ -122,7 +170,11 @@ async function fetchGameState() {
 // ─── Apply state ─────────────────────────────────────────────────────────────
 function applyGameState(gs) {
   State.gameState = gs;
-  if (Object.keys(State.playerPositions).length === 0) assignPositions(gs.players);
+  // Reassign positions whenever player count changes
+  const knownCount = Object.keys(State.playerPositions).length;
+  if (knownCount === 0 || knownCount !== gs.players.length) {
+    assignPositions(gs.players);
+  }
 
   // Set isMyTurn FIRST before any rendering
   State.isMyTurn = gs.currentPlayerId === State.playerId;
@@ -144,6 +196,7 @@ function applyGameState(gs) {
     startTimer(gs.turnStartedAt);
     if (State.isMyTurn) {
       setStatus("Your turn! Play a card or draw.");
+      SoundEngine.playTurnStart();
     } else {
       const cp = gs.players.find(p => p.id === gs.currentPlayerId);
       setStatus(`${cp?.name || '?'}'s turn...`);
@@ -251,24 +304,26 @@ function copyGameCode(code) {
 
 // ─── Player positions ─────────────────────────────────────────────────────────
 function assignPositions(players) {
-  // Positions for up to 6 players around the table
-  // bottom = you, then clockwise: top-left, top, top-right, right, left
-  const positions6 = ['bottom', 'topleft', 'top', 'topright', 'right', 'left'];
-  const positions4 = ['bottom', 'top', 'left', 'right'];
-  const positions2 = ['bottom', 'top'];
-  const positions3 = ['bottom', 'top', 'left'];
-  const positions5 = ['bottom', 'topleft', 'top', 'topright', 'right'];
-
-  const posMap = {
-    2: positions2, 3: positions3, 4: positions4,
-    5: positions5, 6: positions6
-  };
-  const positions = posMap[players.length] || positions4;
-
+  // Map player index (relative to me) to a screen position
+  // Supports 2-6 players
+  const n = players.length;
   const myIdx = players.findIndex(p => p.id === State.playerId);
+
+  // Position arrays indexed by (playerIndex - myIndex) mod n
+  // Index 0 = me (always bottom)
+  const positionMaps = {
+    2: ['bottom', 'top'],
+    3: ['bottom', 'topleft', 'topright'],
+    4: ['bottom', 'top', 'left', 'right'],
+    5: ['bottom', 'topleft', 'top', 'topright', 'right'],
+    6: ['bottom', 'topleft', 'top', 'topright', 'right', 'left']
+  };
+
+  const positions = positionMaps[n] || positionMaps[6];
+
   players.forEach((p, i) => {
-    const posIdx = (i - myIdx + players.length) % players.length;
-    State.playerPositions[p.id] = positions[posIdx] || 'top';
+    const relIdx = ((i - myIdx) + n) % n;
+    State.playerPositions[p.id] = positions[relIdx] || 'top';
   });
 }
 
@@ -399,6 +454,7 @@ function onCardClick(card, el, playable) {
     el.classList.add('shake-anim');
     setTimeout(() => el.classList.remove('shake-anim'), 400);
     setStatus("Can't play that card right now.");
+    SoundEngine.playInvalidCard();
     return;
   }
   if (State.selectedCard?.id === card.id) {
@@ -425,6 +481,14 @@ async function playCard(card, chosenColor) {
     cardEl.classList.add('card-fly-to-discard');
     setTimeout(() => cardEl.remove(), 280);
   }
+
+  // Play sound based on card type
+  if (card.type === 'wild') SoundEngine.playWild();
+  else if (card.type === 'wildDrawFour') SoundEngine.playWildDrawFour();
+  else if (card.type === 'skip') SoundEngine.playSkip();
+  else if (card.type === 'reverse') SoundEngine.playReverse();
+  else if (card.type === 'drawTwo') SoundEngine.playDrawTwo();
+  else SoundEngine.playCardPlay();
 
   // Optimistically update discard pile display
   const displayCard = { ...card, displayColor: chosenColor || card.color };
@@ -461,6 +525,7 @@ async function drawCard() {
   const drawPileEl = document.getElementById('drawPile');
   drawPileEl?.classList.add('draw-pile-pop');
   setTimeout(() => drawPileEl?.classList.remove('draw-pile-pop'), 300);
+  SoundEngine.playCardDraw();
 
   try {
     const res = await fetch(`${API_CONFIG.REST_API_URL}/games/${State.gameId}/draw`, {
@@ -613,6 +678,7 @@ function showChallengeModal(gs) {
 function challengeDrawFour() {
   const modal = document.getElementById('challengeModal');
   clearInterval(modal._iv); modal.dataset.open = ''; modal.classList.add('hidden');
+  SoundEngine.playChallenge();
   wsSend({ action: 'challengeDrawFour' });
 }
 
@@ -648,8 +714,16 @@ function updateDirection(dir) {
 function highlightActive(currentPlayerId) {
   document.querySelectorAll('.player-zone').forEach(z => z.classList.remove('active-turn'));
   if (!currentPlayerId) return;
-  const zone = document.getElementById(`player-${posOf(currentPlayerId)}`);
-  zone?.classList.add('active-turn');
+  // Find the position for this player — check all zones by their player data
+  const gs = State.gameState;
+  if (!gs) return;
+  const pos = posOf(currentPlayerId);
+  const zone = document.getElementById(`player-${pos}`);
+  if (zone) zone.classList.add('active-turn');
+  // Also highlight bottom zone if it's our turn (always correct)
+  if (currentPlayerId === State.playerId) {
+    document.getElementById('player-bottom')?.classList.add('active-turn');
+  }
 }
 
 // ─── Timer ────────────────────────────────────────────────────────────────────
@@ -662,9 +736,13 @@ function startTimer(turnStartedAt) {
   State.timerInterval = setInterval(() => {
     State.timerSeconds--;
     updateTimerDisplay(State.timerSeconds, SECS);
+    // Sound warnings
+    if (State.isMyTurn) {
+      if (State.timerSeconds === 10) SoundEngine.playTimerWarning();
+      if (State.timerSeconds <= 5 && State.timerSeconds > 0) SoundEngine.playTimerUrgent();
+    }
     if (State.timerSeconds <= 0) {
       stopTimer();
-      // Only the current player auto-draws on timeout
       if (State.isMyTurn && State.gameState?.status === 'playing') drawCard();
     }
   }, 1000);
@@ -759,7 +837,12 @@ function showWinnerModal(gs) {
     <button class="btn btn-secondary" onclick="goLobby()">Back to Lobby</button>`;
 
   modal.classList.remove('hidden');
-  if (isMe) launchConfetti();
+  if (isMe) {
+    launchConfetti();
+    SoundEngine.playWin();
+  } else {
+    SoundEngine.playLose();
+  }
 }
 
 function launchConfetti() {
@@ -782,6 +865,13 @@ function goLobby() {
   localStorage.removeItem('uno_active_game_id');
   localStorage.removeItem('uno_active_player_id');
   window.location.href = 'index.html';
+}
+
+function toggleSound() {
+  const on = SoundEngine.toggle();
+  const btn = document.getElementById('soundBtn');
+  if (btn) btn.textContent = on ? '🔊' : '🔇';
+  showToast(on ? 'Sound on' : 'Sound off');
 }
 
 // ─── Validation (client-side mirror of backend) ───────────────────────────────

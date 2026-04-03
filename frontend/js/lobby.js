@@ -265,27 +265,20 @@ function showToast(msg) {
 }
 
 function createParticles() {
-  const container = document.getElementById('particles');
-  const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f'];
-  for (let i = 0; i < 20; i++) {
-    const p = document.createElement('div');
+  const container = document.getElementById('bgCards');
+  const colors = ['#D32F2F','#1565C0','#2E7D32','#F9A825'];
+  for (let i = 0; i < 12; i++) {
+    const div = document.createElement('div');
+    div.className = 'bg-card-float';
     const color = colors[i % colors.length];
-    const size = Math.random() * 6 + 2;
-    const x = Math.random() * 100;
-    const delay = Math.random() * 8;
-    const duration = Math.random() * 10 + 8;
-    p.style.cssText = `
-      position:absolute;width:${size}px;height:${size}px;
-      background:${color};border-radius:50%;left:${x}%;bottom:-10px;
-      opacity:0.4;animation:floatUp ${duration}s ${delay}s infinite linear;
+    const size = Math.random() * 50 + 40;
+    div.style.cssText = `
+      width:${size}px; height:${size*1.5}px;
+      background:${color};
+      left:${Math.random()*100}%;
+      animation-duration:${Math.random()*15+12}s;
+      animation-delay:${Math.random()*-20}s;
     `;
-    container.appendChild(p);
+    container.appendChild(div);
   }
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes floatUp {
-      0%   { transform: translateY(0) rotate(0deg); opacity: 0.4; }
-      100% { transform: translateY(-110vh) rotate(720deg); opacity: 0; }
-    }`;
-  document.head.appendChild(style);
 }
