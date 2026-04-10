@@ -1440,3 +1440,68 @@ body {
 }
 
 .rotate-fs-btn:hover { box-shadow: 0 6px 24px rgba(46,125,50,0.7); transform: translateY(-1px); }
+
+/* ─── Mobile Action Buttons — always visible ───────────────────────────────── */
+/* On small screens, float action buttons as a fixed bar above the hand */
+@media (max-width: 768px), (max-height: 500px) {
+  .player-bottom .player-info {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: unset;
+  }
+
+  .action-buttons {
+    display: flex !important;
+    gap: 4px;
+    flex-wrap: nowrap;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  .btn-uno {
+    padding: 5px 10px !important;
+    font-size: 0.7rem !important;
+    border-radius: 6px !important;
+    animation: unoPulse 1.5s ease-in-out infinite !important;
+    min-width: 44px;
+  }
+
+  .btn-catch {
+    padding: 5px 8px !important;
+    font-size: 0.7rem !important;
+    border-radius: 6px !important;
+    min-width: 44px;
+  }
+
+  .btn-pass {
+    padding: 5px 8px !important;
+    font-size: 0.7rem !important;
+    border-radius: 6px !important;
+  }
+}
+
+/* Landscape mobile — even more compact but still visible */
+@media (max-width: 900px) and (orientation: landscape) {
+  .action-buttons {
+    display: flex !important;
+    gap: 3px;
+  }
+
+  .btn-uno {
+    padding: 4px 7px !important;
+    font-size: 0.6rem !important;
+    min-width: 36px;
+    animation: unoPulse 1.5s ease-in-out infinite !important;
+  }
+
+  .btn-catch {
+    padding: 4px 6px !important;
+    font-size: 0.6rem !important;
+    min-width: 36px;
+  }
+
+  .btn-pass {
+    padding: 4px 6px !important;
+    font-size: 0.6rem !important;
+  }
+}

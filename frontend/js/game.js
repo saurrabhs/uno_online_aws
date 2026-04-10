@@ -112,6 +112,8 @@ function handleServerMessage(msg) {
       SoundEngine.playGameStart();
       break;
     case 'gameRestarted':
+      // Reset player positions so disconnected players don't linger
+      State.playerPositions = {};
       if (msg.gameState) applyGameState(msg.gameState);
       document.getElementById('winnerModal').classList.add('hidden');
       addChat('system', 'New game started!');
@@ -304,13 +306,23 @@ function copyGameCode(code) {
 
 // ─── Player positions ─────────────────────────────────────────────────────────
 function assignPositions(players) {
-  // Map player index (relative to me) to a screen position
-  // Supports 2-6 players
+  // Clear all opponent zones first so disconnected players don't linger
+  ['top','topleft','topright','left','right'].forEach(pos => {
+    const nameEl = document.getElementById(`name-${pos}`);
+    const countEl = document.getElementById(`count-${pos}`);
+    const avatarEl = document.getElementById(`avatar-${pos}`);
+    const cardsEl = document.getElementById(`cards-${pos}`);
+    const zone = document.getElementById(`player-${pos}`);
+    if (nameEl) nameEl.textContent = 'Waiting...';
+    if (countEl) countEl.textContent = '0';
+    if (avatarEl) avatarEl.textContent = '?';
+    if (cardsEl) cardsEl.innerHTML = '';
+    if (zone) zone.style.opacity = '0.25';
+  });
+
   const n = players.length;
   const myIdx = players.findIndex(p => p.id === State.playerId);
 
-  // Position arrays indexed by (playerIndex - myIndex) mod n
-  // Index 0 = me (always bottom)
   const positionMaps = {
     2: ['bottom', 'top'],
     3: ['bottom', 'topleft', 'topright'],

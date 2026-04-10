@@ -1,0 +1,305 @@
+
+==========================================
+Project: Real-Time UNO Card Game on AWS
+Stack: Node.js, AWS Lambda, DynamoDB, API Gateway, S3, CloudFront
+==========================================
+
+------------------------------------------------------------
+1. DECK GENERATION (backend/shared/uno-deck.js)
+------------------------------------------------------------
+function generateDeck() {
+  const cards = [];
+  let id = 0;
+  for (const color of ['red','blue','green','yellow']) {
+    cards.push(createCard(id++, 'number', color, 0));
+    for (let n = 1; n <= 9; n++) {
+      cards.push(createCard(id++, 'number', color, n));
+      cards.push(createCard(id++, 'number', color, n));
+    }
+    for (const action of ['skip','reverse','drawTwo']) {
+      cards.push(createCard(id++, action, color, null));
+      cards.push(createCard(id++, action, color, null));
+    }
+  }
+  for (let i = 0; i < 4; i++) {
+    cards.push(createCard(id++, 'wild', 'wild', null));
+    cards.push(createCard(id++, 'wildDrawFour', 'wild', null));
+  }
+  return cards; // 108 cards total
+}
+
+function isValidPlay(card, topCard, currentColor) {
+  if (card.type === 'wild' || card.type === 'wildDrawFour') return true;
+  if (card.color === currentColor) return true;
+  if (card.type === 'number' && topCard.type === 'number'
+      && card.value === topCard.value) return true;
+  if (card.type !== 'number' && card.type === topCard.type) return true;
+  return false;
+}
+
+------------------------------------------------------------
+2. MOVE VALIDATION (backend/shared/game-validator.js)
+------------------------------------------------------------
+function applyMove(game, playerId, cardId, chosenColor = null) {
+  const playerIndex = game.players.findIndex(p => p.id === playerId);
+  if (game.currentPlayerIndex !== playerIndex)
+    return { success: false, error: 'Not your turn' };
+
+  const card = game.hands[playerId].find(c => c.id === cardId);
+  if (!isValidPlay(card, game.discardPile.at(-1), game.currentColor))
+    return { success: false, error: 'Invalid move' };
+
+  const newState = deepCloneGame(game);
+  newState.hands[playerId] = newState.hands[playerId].filter(c => c.id !== cardId);
+  newState.discardPile.push({ ...card, displayColor: chosenColor || card.color });
+  newState.currentColor = card.type.includes('wild') ? chosenColor : card.color;
+
+  if (newState.hands[playerId].length === 0) {
+    newState.status = 'finished';
+    newState.winnerId = playerId;
+    const roundScore = calculateRoundScore(newState, playerId);
+    newState.cumulativeScores[playerId] =
+      (newState.cumulativeScores[playerId] || 0) + roundScore;
+    return { success: true, newState, won: true };
+  }
+
+  applyCardEffect(newState, card, playerIndex);
+  return { success: true, newState, won: false };
+}
+
+function applyCardEffect(state, card, playedByIndex) {
+  const n = state.players.length;
+  const next = (i, d) => {
+    let idx = i;
+    for (let j = 0; j < n; j++) {
+      idx = (idx + d + n) % n;
+      if (state.players[idx].connected !== false) return idx;
+    }
+    return (i + d + n) % n;
+  };
+  switch (card.type) {
+    case 'skip':
+      state.currentPlayerIndex = next(next(playedByIndex, state.direction), state.direction);
+      break;
+    case 'reverse':
+      state.direction *= -1;
+      state.currentPlayerIndex = n === 2 ? playedByIndex : next(playedByIndex, state.direction);
+      break;
+    case 'drawTwo':
+      const n2 = next(playedByIndex, state.direction);
+      drawCards(state, 2).forEach(c => state.hands[state.players[n2].id].push(c));
+      state.currentPlayerIndex = next(n2, state.direction);
+      break;
+    case 'wildDrawFour':
+      const n4 = next(playedByIndex, state.direction);
+      drawCards(state, 4).forEach(c => state.hands[state.players[n4].id].push(c));
+      state.pendingChallenge = { challengerId: state.players[n4].id,
+        challengedId: state.players[playedByIndex].id };
+      state.currentPlayerIndex = next(n4, state.direction);
+      break;
+    default:
+      state.currentPlayerIndex = next(playedByIndex, state.direction);
+  }
+  state.turnStartedAt = Date.now();
+}
+
+------------------------------------------------------------
+3. CREATE GAME (backend/create-game/index.js)
+------------------------------------------------------------
+exports.handler = async (event) => {
+  const { playerName, deviceId } = JSON.parse(event.body);
+  const gameId   = generateGameCode();
+  const playerId = uuidv4();
+  const game = {
+    gameId, status: 'waiting', hostId: playerId,
+    players: [{ id: playerId, name: playerName, deviceId, connected: true }],
+    hands: {}, drawPile: [], discardPile: [],
+    currentPlayerIndex: 0, direction: 1, cumulativeScores: {}
+  };
+  await putGame(game);
+  return respond(201, { gameId, playerId, isHost: true });
+};
+
+------------------------------------------------------------
+4. START GAME (backend/start-game/index.js)
+------------------------------------------------------------
+exports.handler = async (event) => {
+  const { playerId } = JSON.parse(event.body);
+  const game = await getGame(event.pathParameters.id);
+  if (game.hostId !== playerId) return respond(403, 'Only host can start');
+  if (game.players.length < 2)  return respond(400, 'Need at least 2 players');
+
+  const { hands, drawPile, discardPile } =
+    dealCards(generateDeck(), game.players.map(p => p.id), 7);
+
+  game.status = 'playing';
+  game.hands = hands; game.drawPile = drawPile; game.discardPile = discardPile;
+  game.currentColor = discardPile.at(-1).color;
+  game.turnStartedAt = Date.now();
+  await putGame(game);
+  broadcastPersonalised(game.gameId, game);
+};
+
+------------------------------------------------------------
+5. WEBSOCKET HANDLER (backend/websocket-handler/index.js)
+------------------------------------------------------------
+exports.handler = async (event) => {
+  const { routeKey, connectionId } = event.requestContext;
+  switch (routeKey) {
+    case '$connect':    return handleConnect(event, connectionId);
+    case '$disconnect': return handleDisconnect(connectionId);
+    default:            return handleMessage(event, connectionId);
+  }
+};
+
+async function handleDisconnect(connectionId) {
+  const { gameId, playerId } = await getConnection(connectionId);
+  await deleteConnection(connectionId);
+  const game = await getGame(gameId);
+  game.players.find(p => p.id === playerId).connected = false;
+
+  const active = game.players.filter(p => p.connected !== false);
+  if (active.length === 1) {
+    game.status = 'finished'; game.winnerId = active[0].id;
+  } else if (game.players[game.currentPlayerIndex]?.id === playerId) {
+    let next = game.currentPlayerIndex;
+    for (let i = 0; i < game.players.length; i++) {
+      next = (next + game.direction + game.players.length) % game.players.length;
+      if (game.players[next].connected !== false) break;
+    }
+    game.currentPlayerIndex = next;
+  }
+  await putGame(game);
+  broadcastAll(gameId, game);
+}
+
+async function handleMessage(event, connectionId) {
+  const { gameId, playerId } = await getConnection(connectionId);
+  const { action, ...body } = JSON.parse(event.body);
+
+  if (action === 'callUno') {
+    const game = await getGame(gameId);
+    if (game.hands[playerId]?.length === 1) {
+      game.unoCallRequired = null;
+      await putGame(game);
+      broadcastAll(gameId, { type: 'unoCall', playerId });
+    }
+  }
+  if (action === 'catchUno') {
+    const game = await getGame(gameId);
+    const target = body.targetPlayerId;
+    if (game.hands[target]?.length === 1 && game.unoCallRequired === target
+        && Date.now() < game.unoCallDeadline) {
+      const result = applyUnoPenalty(game, target);
+      await putGame(result.newState);
+      broadcastAll(gameId, result.newState);
+    }
+  }
+}
+
+------------------------------------------------------------
+6. REAL-TIME BROADCAST (backend/shared/dynamodb-client.js)
+------------------------------------------------------------
+async function sendToConnection(connectionId, message) {
+  const client = new ApiGatewayManagementApiClient({
+    endpoint: process.env.WEBSOCKET_ENDPOINT
+  });
+  await client.send(new PostToConnectionCommand({
+    ConnectionId: connectionId,
+    Data: JSON.stringify(message)
+  }));
+}
+
+async function broadcastPersonalised(gameId, gameState) {
+  const connections = await getConnectionsByGame(gameId);
+  await Promise.allSettled(
+    connections.map(({ connectionId, playerId }) =>
+      sendToConnection(connectionId, {
+        type: 'gameState',
+        gameState: buildPlayerView(gameState, playerId) // each player sees own cards only
+      })
+    )
+  );
+}
+
+------------------------------------------------------------
+7. FRONTEND - PLAY CARD WITH OPTIMISTIC UI (frontend/js/game.js)
+------------------------------------------------------------
+async function playCard(card, chosenColor) {
+  // Optimistic: remove card instantly, revert if server rejects
+  document.querySelector(`[data-card-id="${card.id}"]`)
+    ?.classList.add('card-fly-to-discard');
+  renderTopCard({ ...card, displayColor: chosenColor || card.color });
+
+  const res = await fetch(`${API_CONFIG.REST_API_URL}/games/${State.gameId}/move`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playerId: State.playerId, cardId: card.id, chosenColor })
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    setStatus(`Invalid move: ${data.error}`);
+    applyGameState(State.gameState); // revert
+  } else {
+    applyGameState(data.gameState);
+  }
+}
+
+// Synchronized 30-second turn timer across all clients
+function startTimer(turnStartedAt) {
+  const elapsed = Math.floor((Date.now() - turnStartedAt) / 1000);
+  State.timerSeconds = Math.max(0, 30 - elapsed);
+  State.timerInterval = setInterval(() => {
+    State.timerSeconds--;
+    updateTimerDisplay(State.timerSeconds, 30);
+    if (State.timerSeconds <= 0 && State.isMyTurn) drawCard(); // auto-draw on timeout
+  }, 1000);
+}
+
+------------------------------------------------------------
+8. SVG CARD RENDERER (frontend/js/card-renderer.js)
+------------------------------------------------------------
+function renderCardSVG(card, size = 'normal') {
+  const w = size === 'large' ? 90 : 70;
+  const h = size === 'large' ? 135 : 105;
+  const scheme = CARD_COLORS[card.displayColor || card.color];
+
+  return `<svg viewBox="0 0 ${w} ${h}">
+    <rect width="${w}" height="${h}" rx="10" fill="${scheme.bg}"/>
+    <rect x="${w*0.14}" y="${h*0.19}" width="${w*0.72}" height="${h*0.62}"
+          rx="6" fill="white" transform="rotate(-30 ${w/2} ${h/2})"/>
+    <text x="${w/2}" y="${h/2+16}" font-size="42" font-weight="900"
+          text-anchor="middle" fill="${scheme.bg}">${card.value}</text>
+    <text x="5" y="16" font-size="9" font-weight="900" fill="white">${card.value}</text>
+  </svg>`;
+}
+
+------------------------------------------------------------
+9. AWS INFRASTRUCTURE (infrastructure/template.yaml - key parts)
+------------------------------------------------------------
+# DynamoDB Tables
+GamesTable:
+  Type: AWS::DynamoDB::Table
+  Properties:
+    TableName: uno-games-prod
+    BillingMode: PAY_PER_REQUEST
+    TimeToLiveSpecification:
+      AttributeName: ttl
+      Enabled: true
+
+# WebSocket API
+WebSocketApi:
+  Type: AWS::ApiGatewayV2::Api
+  Properties:
+    ProtocolType: WEBSOCKET
+    RouteSelectionExpression: '$request.body.action'
+
+# CloudFront CDN
+CloudFrontDistribution:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      DefaultRootObject: index.html
+      ViewerProtocolPolicy: redirect-to-https
+      PriceClass: PriceClass_100
+
